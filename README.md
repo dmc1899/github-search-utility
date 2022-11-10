@@ -50,3 +50,7 @@ Each file contains:
 customer,id_customer,acme-organisation/repository1,my_big_query.sql,materialized_views/subfolder1/subfolder2/my_big_query.sql
 ```
 The output files can then be imported into Excel for further analyses.
+
+### Limitations
+The script basically performs a primitive search for the name of the table AND the name of each column in a single search operation.
+This primitive approach is likely to produce false positives and as such any list of files should be reviewed manually.
