@@ -2,8 +2,9 @@
 # GitHub Repository Search Utility
 
 This repo includes primitive shell scripts that wrap the GitHub CLI to support
-search and find use cases such as finding references to a range of database tables
+[code search](https://docs.github.com/en/rest/search#search-code) use cases such as finding references to a range of database tables
 and columns across a code base.
+
 
 ## Usage
 
