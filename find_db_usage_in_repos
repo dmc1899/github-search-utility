@@ -1,0 +1,162 @@
+#!/bin/bash
+##================================================================
+## find_db_usage_in_repos
+##================================================================
+##
+## DESCRIPTION
+#%    Utility script used to find files in one or more remote
+##    github repositories which reference specific database table and
+##    column names.
+##
+## DEPENDENCIES
+##    github CLI utility must be installed and configured to authenticate
+##    against your target repositories. See https://cli.github.com/ for
+##    more details.
+##
+## USAGE
+##    Text files used as input to the script:
+##      1. Repositories file - lists the names of all repositories
+##         to search
+##      2. Tables file - lists the names of all tables to find
+##          reference to
+##      3.a,b,c... Single file for every table listed in 2. above
+##          containing a list of the column names for that table.
+##          The name of this file is the same as the table name.
+##
+##    Text files created as output from the script:
+##      1.a,b,c... Single file for every repository listed in 1. above
+##          where the filename is the name of the repository and the
+##          contents of the file is: table name, column name, file, path
+##
+##    To execute the script simply run using the defaults:
+##    ./find_db_usage_in_repos
+##
+##    Default values:  ./input/tables.txt
+##                     ./input/tables/<table_name>.txt
+##                     ./input/repositories.txt
+##                     ./output/<repo_name>.txt
+##
+##   To override defaults, issue the following command:
+##    ./find_db_usage_in_repos <DB_TABLE_NAMES_FILE_PATH> \
+##                              <REPOSITORY_NAMES_FILE_PATH> \
+##                              <DB_TABLE_COLUM_NAMES_DIR_PATH> \
+##                              <RATE_LIMIT_SLEEP_INTERVAL_SEC> \
+##                              <SEARCH_RESULT_DIR_PATH>
+##    See initialise for override parameter ordering.
+##
+##    The output produced is one CSV file per repository name
+##    containing the table, column, filename and filepath.
+##================================================================
+
+declare APP_NAME
+
+declare -r BANNER=" ==================== "
+
+declare -r INPUT_DIR_PATH="./input/"
+declare -r OUTPUT_DIR_PATH="./output/"
+
+declare -r DEFAULT_FILE_EXT=".txt"
+declare -r DEFAULT_DB_TABLE_NAMES_FILE_PATH="${INPUT_DIR_PATH}tables${DEFAULT_FILE_EXT}"
+declare -r DEFAULT_DB_TABLE_COLUMN_NAMES_DIR_PATH="${INPUT_DIR_PATH}tables/"
+declare -r DEFAULT_REPOSITORY_NAMES_FILE_PATH="${INPUT_DIR_PATH}repositories${DEFAULT_FILE_EXT}"
+declare -r DEFAULT_SEARCH_RESULT_DIR_PATH="${OUTPUT_DIR_PATH}"
+declare -ri DEFAULT_RATE_LIMIT_SLEEP_INTERVAL_SEC=2
+
+declare -a DB_TABLE_NAMES
+declare -i TOTAL_DB_TABLE_NAMES
+declare -a REPOSITORY_NAMES
+declare -i TOTAL_REPOSITORY_NAMES
+
+declare DB_TABLE_NAMES_FILE_PATH
+declare DB_TABLE_COLUM_NAMES_DIR_PATH
+declare REPOSITORY_NAMES_FILE_PATH
+declare SEARCH_RESULT_DIR_PATH
+
+function initialise() {
+  APP_NAME=$(basename "$0")
+  clear && printf "\n%s Starting %s %s\n" "${BANNER}" "${APP_NAME}" "${BANNER}"
+
+  DB_TABLE_NAMES_FILE_PATH=${1:-${DEFAULT_DB_TABLE_NAMES_FILE_PATH}}
+  REPOSITORY_NAMES_FILE_PATH=${2:-${DEFAULT_REPOSITORY_NAMES_FILE_PATH}}
+  DB_TABLE_COLUM_NAMES_DIR_PATH=${3:-${DEFAULT_DB_TABLE_COLUMN_NAMES_DIR_PATH}}
+  RATE_LIMIT_SLEEP_INTERVAL_SEC=${4:-${DEFAULT_RATE_LIMIT_SLEEP_INTERVAL_SEC}}
+  SEARCH_RESULT_DIR_PATH=${5:-${DEFAULT_SEARCH_RESULT_DIR_PATH}}
+
+  printf "Initialised Input Tables File as: %s, Input Reps File as: %s, Column Names Directory as: %s, Delay Interval as: %s.\n" \
+    "${DB_TABLE_NAMES_FILE_PATH}" "${REPOSITORY_NAMES_FILE_PATH}" "${DB_TABLE_COLUM_NAMES_DIR_PATH}" \
+    "${RATE_LIMIT_SLEEP_INTERVAL_SEC}"
+
+  IFS=$'\n' read -d '' -r -a DB_TABLE_NAMES < "${DB_TABLE_NAMES_FILE_PATH}"
+  IFS=$'\n' read -d '' -r -a REPOSITORY_NAMES < "${REPOSITORY_NAMES_FILE_PATH}"
+
+  TOTAL_DB_TABLE_NAMES=${#DB_TABLE_NAMES[@]}
+  TOTAL_REPOSITORY_NAMES=${#REPOSITORY_NAMES[@]}
+
+  printf "Identified %s tables to search against %s repositories.\n" "${TOTAL_DB_TABLE_NAMES}" "${TOTAL_REPOSITORY_NAMES}"
+
+  mkdir -p "${SEARCH_RESULT_DIR_PATH}"
+
+  printf "Writing search results to %s.\n" "${SEARCH_RESULT_DIR_PATH}"
+}
+
+function finalise() {
+  TOTAL_OUTPUT_FILES=$(find "${SEARCH_RESULT_DIR_PATH}" -maxdepth 1 -name '*.*' | wc -l)
+
+  printf "Search results directory %s contains %s repository result files."  "${SEARCH_RESULT_DIR_PATH}" "${TOTAL_OUTPUT_FILES}"
+
+  printf "\n%s Ending %s %s\n" "${BANNER}" "${APP_NAME}" "${BANNER}"
+}
+
+function search() {
+  for (( table_index=0; table_index<=(TOTAL_DB_TABLE_NAMES -1); table_index++ ))
+  do
+  	DB_TABLE_NAME="${DB_TABLE_NAMES[table_index]}"
+  	DB_TABLE_COLUMN_NAMES_FILE_PATH="${DB_TABLE_COLUM_NAMES_DIR_PATH}${DB_TABLE_NAME}${DEFAULT_FILE_EXT}"
+
+  	declare -a DB_TABLE_COLUMN_NAMES
+  	IFS=$'\n' read -d '' -r -a DB_TABLE_COLUMN_NAMES < "${DB_TABLE_COLUMN_NAMES_FILE_PATH}"
+
+    for REPOSITORY_NAME in "${REPOSITORY_NAMES[@]}"
+    do
+       REPOSITORY_SEARCH_RESULTS_FILE_PATH="${SEARCH_RESULT_DIR_PATH}${REPOSITORY_NAME#*/}${DEFAULT_FILE_EXT}"
+
+       for DB_TABLE_COLUMN_NAME in "${DB_TABLE_COLUMN_NAMES[@]}"
+       do
+          printf "Running search for table: %s and column: %s against repository: %s \n" "${DB_TABLE_NAME}" "${DB_TABLE_COLUMN_NAME}" "${REPOSITORY_NAME}"
+          SEARCH_RESULT_TMP_FILE=$(mktemp) && SEARCH_RESULT_CLEANED_TMP_FILE=$(mktemp) && SEARCH_SUMMARY_TMP_FILE=$(mktemp)
+
+          GITHUB_QUERY_STRING="repo:${REPOSITORY_NAME} ${DB_TABLE_NAME} ${DB_TABLE_COLUMN_NAME} "
+          gh api -X GET search/code --paginate -f q="${GITHUB_QUERY_STRING}" > "${SEARCH_RESULT_TMP_FILE}"
+
+          cat "${SEARCH_RESULT_TMP_FILE}" | \
+            jq --arg searchstring "${DB_TABLE_COLUMN_NAME}" '.items[] | {name, path} | join(",") ' > \
+            "${SEARCH_RESULT_CLEANED_TMP_FILE}"
+
+          while IFS= read -r search_result;
+          do
+              search_result=$(sed -e 's/^"//' -e 's/"$//' <<< "$search_result")
+              printf "Saving search result: %s \n" "${search_result}"
+
+              echo "${DB_TABLE_NAME},${DB_TABLE_COLUMN_NAME},${REPOSITORY_NAME},${search_result}" >> "${SEARCH_SUMMARY_TMP_FILE}"
+          done < "${SEARCH_RESULT_CLEANED_TMP_FILE}"
+
+          cat "${SEARCH_SUMMARY_TMP_FILE}" >> "${REPOSITORY_SEARCH_RESULTS_FILE_PATH}"
+
+          rm "${SEARCH_RESULT_TMP_FILE}" && rm "${SEARCH_RESULT_CLEANED_TMP_FILE}" && rm "${SEARCH_SUMMARY_TMP_FILE}"
+
+          printf "Delaying for %s seconds...\n" "${RATE_LIMIT_SLEEP_INTERVAL_SEC}"
+          sleep "${RATE_LIMIT_SLEEP_INTERVAL_SEC}"
+       done
+    done
+  done
+}
+
+function main() {
+  initialise "$@"
+
+  search
+
+  finalise
+}
+
+main "$@"
