@@ -41,7 +41,6 @@
 ##                              <REPOSITORY_NAMES_FILE_PATH> \
 ##                              <DB_TABLE_COLUM_NAMES_DIR_PATH> \
 ##                              <RATE_LIMIT_SLEEP_INTERVAL_SEC> \
-##                              <RATE_LIMIT_SLEEP_INTERVAL_SEC> \
 ##                              <SEARCH_RESULT_DIR_PATH>
 ##    See initialise for override parameter ordering.
 ##
@@ -108,7 +107,7 @@ function finalise() {
   printf "\n%s Ending %s %s\n" "${BANNER}" "${APP_NAME}" "${BANNER}"
 }
 
-function execute_search() {
+function search() {
   for (( table_index=0; table_index<=(TOTAL_DB_TABLE_NAMES -1); table_index++ ))
   do
   	DB_TABLE_NAME="${DB_TABLE_NAMES[table_index]}"
@@ -155,7 +154,7 @@ function execute_search() {
 function main() {
   initialise "$@"
 
-  execute_search
+  search
 
   finalise
 }

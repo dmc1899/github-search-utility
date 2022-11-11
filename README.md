@@ -36,22 +36,27 @@ first_name
 ```
 
 ### Use Outputs
-One output file for each repository is created in the [repositories output directory](output/).  
+One output CSV file for each repository is created in the [repositories output directory](output/).  
 
-Each file is named after the repository.
+Each file is named after the repository without the organisation reference.
 
-Each file contains:
-1. Name of the Database Table
-2. Name of the Database Table Column
-3. Name of the GitHub Repository
-4. Name of the file containing the Table and Column name
-5. Path of the file in the target repository.
+Each output file contains the following fields:
+1. Name of the database table
+2. Name of the database table column
+3. Name of the GitHub repository
+4. Name of the file containing the table and column name
+5. Path of the file in the target repository
 
+For example:
 ```
 customer,id_customer,acme-organisation/repository1,my_big_query.sql,materialized_views/subfolder1/subfolder2/my_big_query.sql
 ```
-The output files can then be imported into Excel for further analyses.
+The output files can then be optionally combined and imported into Excel for further analyses.
+The composite primary key in each file comprises: (table name + column name + repository name).
 
 ### Limitations
-The script basically performs a primitive search for the name of the table AND the name of each column in a single search operation.
-This primitive approach is likely to produce false positives and as such any list of files should be reviewed manually.
+* The script performs a primitive search for the name of the table AND the name of each column in a single search operation. This primitive approach is likely to produce false positives and as such any list of files should be reviewed manually.
+* The GitHub API has [specific rate limits for search](https://docs.github.com/en/rest/rate-limit) operations and you should override the `RATE_LIMIT_SLEEP_INTERVAL_SEC` variable as necessary.
+
+### Future Extensions
+* To reduce the false positive rate of search results, the [exact GitHub code search](https://docs.github.com/en/search-github/github-code-search/understanding-github-code-search-syntax#query-for-an-exact-match) functionality should be considered when it becomes GA.
